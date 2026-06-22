@@ -1,6 +1,6 @@
 // ⚠️ URL do backend no Render
-//const API_URL = 'https://barber-connect-javascript.onrender.com';
-const API_URL = 'http://localhost:3000';
+const API_URL = 'https://barbearia-chat-groq-neon-render.onrender.com';
+//const API_URL = 'http://localhost:3000';
 
 // ═══════════════════════════════════════
 // CONFIGURAÇÕES DE PROTEÇÃO
