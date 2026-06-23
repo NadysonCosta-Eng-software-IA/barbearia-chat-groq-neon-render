@@ -297,3 +297,113 @@
     
     <div class="reveal">
       <div class="contact-form">
+        <div class="form-title">Envie uma Mensagem</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nome</label>
+            <input type="text" id="fname" placeholder="Seu nome">
+          </div>
+          <div class="form-group">
+            <label>Telefone</label>
+            <input type="tel" id="fphone" placeholder="(86) 9 9999-0000">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Serviço desejado</label>
+          <select id="fservice">
+            <option value="">Selecione um serviço</option>
+            <option>Corte Clássico – R$ 45,00</option>
+            <option>Barba Completa – R$ 35,00</option>
+            <option>Combo Premium – R$ 90,00</option>
+            <option>Hidratação Capilar – R$ 55,00</option>
+            <option>Luzes & Coloração – R$ 120,00</option>
+            <option>Sobrancelha Design – R$ 20,00</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Mensagem</label>
+          <textarea id="fmsg" placeholder="Informe o dia e horário de preferência ou faça sua pergunta..."></textarea>
+        </div>
+        <button class="btn-submit" onclick="enviarFormulario()">📅 Solicitar Agendamento</button>
+        <div class="form-success" id="formSuccess">✅ Mensagem enviada! Entraremos em contato em breve.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <a href="#inicio" class="logo"><div class="logo-icon">✂</div>Barber<span>Connect</span></a>
+      <p style="margin-top:1rem; color:var(--gray); font-size:0.85rem; line-height:1.8;">Onde cada corte conta uma história. Dedicados à excelência em cuidados masculinos desde 2016.</p>
+    </div>
+    <div class="footer-col">
+      <h4>Serviços</h4>
+      <ul>
+        <li><a href="#servicos">Corte Clássico</a></li>
+        <li><a href="#servicos">Barba Completa</a></li>
+        <li><a href="#servicos">Combo Premium</a></li>
+        <li><a href="#servicos">Hidratação</a></li>
+        <li><a href="#servicos">Coloração</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Empresa</h4>
+      <ul>
+        <li><a href="#equipe">Nossa Equipe</a></li>
+        <li><a href="#galeria">Galeria</a></li>
+        <li><a href="#depoimentos">Depoimentos</a></li>
+        <li><a href="#contato">Contato</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Redes Sociais</h4>
+      <ul>
+        <li><a href="#">📸 Instagram</a></li>
+        <li><a href="#">💬 WhatsApp</a></li>
+        <li><a href="#">📘 Facebook</a></li>
+        <li><a href="#">🎵 TikTok</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span style="color:var(--gray2)">© 2026 <span>Barber Connect</span>. Todos os direitos reservados.</span>
+    <span style="color:var(--gray2)">Projeto acadêmico – PIT Teresina</span>
+  </div>
+</footer>
+
+<div id="chatbot-container">
+  <div id="chat-window" style="display: none;">
+    <div class="chat-header">
+      <div class="chat-avatar">🤖</div>
+      <div class="chat-header-info">
+        <strong>BarberBot</strong>
+        <span>● Online agora</span>
+      </div>
+      <button class="chat-close" onclick="toggleChat()">✕</button>
+    </div>
+    
+    <div id="chat-messages"></div>
+    
+    <div class="chat-suggestions" id="suggestions">
+      <button class="suggestion-btn" onclick="sendSuggestion('Quais são os serviços disponíveis?')">Serviços</button>
+      <button class="suggestion-btn" onclick="sendSuggestion('Qual o horário de funcionamento?')">Horário</button>
+      <button class="suggestion-btn" onclick="sendSuggestion('Como faço para agendar?')">Agendar</button>
+      <button class="suggestion-btn" onclick="sendSuggestion('Quais são os preços?')">Preços</button>
+    </div>
+    
+    <div id="chat-form">
+      <input type="text" id="chat-input" placeholder="Digite sua mensagem..." onkeypress="if(event.key === 'Enter') sendMessage()">
+      <button id="chat-send" onclick="sendMessage()">➤</button>
+    </div>
+  </div>
+  
+  <button id="chat-toggle" onclick="toggleChat()">
+    💬
+    <div class="chat-badge" id="chat-badge">1</div>
+  </button>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
