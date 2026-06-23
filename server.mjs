@@ -14,49 +14,49 @@ app.use(express.static('public'));
 // CONFIGURAÇÕES
 // ═══════════════════════════════════════
 const CONFIG = {
-    MAX_REQUESTS_PER_MINUTE: 20,  // Groq permite 30/min
+    MAX_REQUESTS_PER_MINUTE: 20,
     CACHE_DURATION: 10 * 60 * 1000,
     REQUEST_TIMEOUT: 15000,
 };
 
-// Cache e Rate Limiter
+// Cache e Rate Limiter em memória
 const responseCache = new Map();
 const rateLimiter = new Map();
 
 // ═══════════════════════════════════════
-// GROQ - MUITO MELHOR QUE GEMINI!
+// GROQ INITIALIZATION
 // ═══════════════════════════════════════
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // ═══════════════════════════════════════
-// CONEXÃO COM NEON DB
+// CONEXÃO COM NEON DB (POSTGRESQL)
 // ═══════════════════════════════════════
 let pool = null;
 let dbAtivo = false;
 
 async function conectarNeonDB() {
     if (!process.env.DATABASE_URL) {
-        console.log('⚠️ DATABASE_URL não encontrado no .env');
-        console.log('💡 Chat funcionará sem salvar dados');
+        console.log('⚠️ DATABASE_URL não encontrado no ambiente.');
+        console.log('💡 Chat funcionará sem salvar dados no banco.');
         return;
     }
     
     try {
         pool = new Pool({
             connectionString: process.env.DATABASE_URL,
-            ssl: { rejectUnauthorized: false },
+            ssl: { rejectUnauthorized: false }, // Obrigatório para o Render + Neon
             connectionTimeoutMillis: 5000,
             idleTimeoutMillis: 10000,
         });
         
         const result = await pool.query('SELECT NOW()');
-        console.log('✅ Neon DB conectado:', result.rows[0].now);
+        console.log('✅ Neon DB conectado com sucesso:', result.rows[0].now);
         dbAtivo = true;
         
         await criarTabelas();
     } catch (err) {
-        console.error('❌ Erro Neon DB:', err.message);
-        console.log('💡 O chat continuará funcionando normalmente');
+        console.error('❌ Erro de conexão com Neon DB:', err.message);
+        console.log('💡 O chat continuará funcionando de modo volátil.');
         pool = null;
         dbAtivo = false;
     }
@@ -97,7 +97,7 @@ async function criarTabelas() {
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
-        console.log('✅ Tabelas criadas no Neon DB');
+        console.log('✅ Tabelas verificadas/criadas com sucesso no Neon DB.');
     } catch (err) {
         console.error('❌ Erro ao criar tabelas:', err.message);
         dbAtivo = false;
@@ -107,7 +107,7 @@ async function criarTabelas() {
 conectarNeonDB();
 
 // ═══════════════════════════════════════
-// ROTA DO CHAT - COM GROQ (RESPOSTAS LONGAS!)
+// ROTA PRINCIPAL DO CHAT - GROQ (LLAMA 3.3)
 // ═══════════════════════════════════════
 app.post('/api/chat', async (req, res) => {
     const startTime = Date.now();
@@ -119,30 +119,33 @@ app.post('/api/chat', async (req, res) => {
             return res.status(400).json({ text: 'Digite uma mensagem.' });
         }
         
-        // Rate limiting
-        const clientIP = req.ip;
+        // Controle de Rate Limiting por IP
+        const clientIP = req.ip || req.headers['x-forwarded-for'];
         const now = Date.now();
         const userRequests = rateLimiter.get(clientIP) || [];
         const recentRequests = userRequests.filter(t => now - t < 60000);
         
         if (recentRequests.length >= CONFIG.MAX_REQUESTS_PER_MINUTE) {
-            return res.status(429).json({ text: 'Aguarde um momento...' });
+            return res.status(429).json({ text: 'Muitas requisições. Aguarde um momento por favor, patrão...' });
         }
         
         recentRequests.push(now);
         rateLimiter.set(clientIP, recentRequests);
         
-        // Cache
+        // Cache de Respostas do Servidor
         const cacheKey = message.toLowerCase().trim();
         const cached = responseCache.get(cacheKey);
         if (cached && now - cached.timestamp < CONFIG.CACHE_DURATION) {
-            console.log('✅ Cache hit');
+            console.log('✅ Cache hit interno');
             return res.json({ text: cached.response, cached: true });
         }
         
-        console.log(`📨 "${message}"`);
+        if (!process.env.GROQ_API_KEY) {
+            throw new Error('GROQ_API_KEY ausente no ambiente do servidor.');
+        }
+
+        console.log(`📨 Enviando para o Groq: "${message}"`);
         
-        // 🚀 GROQ - Respostas completas e rápidas!
         const completion = await groq.chat.completions.create({
             model: 'llama-3.3-70b-versatile',
             messages: [
@@ -191,37 +194,35 @@ Regras:
         const tokensUsados = completion.usage?.total_tokens || 0;
         const duration = Date.now() - startTime;
         
-        console.log(`✅ ${duration}ms | ${botText.length} caracteres | ${tokensUsados} tokens`);
-        console.log(`📝 "${botText}"`);
+        console.log(`✅ ${duration}ms | ${tokensUsados} tokens consumidos`);
         
-        // Salva no cache
+        // Armazenamento em Cache
         responseCache.set(cacheKey, {
             response: botText,
             timestamp: now
         });
         
-        // Limpa cache antigo
         if (responseCache.size > 100) {
             const firstKey = responseCache.keys().next().value;
             responseCache.delete(firstKey);
         }
         
-        res.json({ text: botText, tokens: tokensUsados });
+        return res.json({ text: botText, tokens: tokensUsados });
         
     } catch (err) {
-        console.error('❌ Erro:', err.message);
-        res.status(500).json({
-            text: 'Estou temporariamente indisponível. WhatsApp: (86) 9 9999-0001 💬'
+        console.error('❌ Erro na Rota de Chat:', err.message);
+        return res.status(500).json({
+            text: 'Estou passando por uma instabilidade rápida na rede. Se preferir, pode falar direto no WhatsApp: (86) 9 9999-0001 💬'
         });
     }
 });
 
 // ═══════════════════════════════════════
-// ROTA SALVAR CONVERSA
+// ROTA DE PERSISTÊNCIA DAS CONVERSAS
 // ═══════════════════════════════════════
 app.post('/api/salvar-conversa', async (req, res) => {
     if (!dbAtivo || !pool) {
-        return res.json({ sucesso: false, motivo: 'Banco de dados indisponível' });
+        return res.json({ sucesso: false, motivo: 'Banco de dados offline' });
     }
     
     const { nome, telefone, mensagem, resposta, tokens } = req.body;
@@ -244,35 +245,29 @@ app.post('/api/salvar-conversa', async (req, res) => {
             [clienteId, mensagem, resposta, tokens || 0]
         );
         
-        console.log('✅ Conversa salva no Neon - Cliente:', clienteId);
-        res.json({ sucesso: true, cliente_id: clienteId });
-        
+        return res.json({ sucesso: true, cliente_id: clienteId });
     } catch (err) {
-        console.error('❌ Erro ao salvar:', err);
-        res.json({ sucesso: false, erro: err.message });
+        console.error('❌ Erro ao salvar log de conversa:', err.message);
+        return res.json({ sucesso: false, erro: err.message });
     }
 });
 
 // ═══════════════════════════════════════
-// ROTA AGENDAMENTO
+// ROTA DE AGENDAMENTO
 // ═══════════════════════════════════════
 app.post('/api/agendar', async (req, res) => {
-    const { nome, telefone, servico, profissional, horario } = req.body;
+    const { nome, telefone, servico, profesional, horario } = req.body;
     
-    // Sempre gera link WhatsApp
-    const msg = `*NOVO AGENDAMENTO*\n👤 ${nome}\n📞 ${telefone}\n✂️ ${servico}\n💈 ${profissional || 'Não especificado'}\n⏰ ${horario || 'A definir'}`;
+    const msg = `*NOVO AGENDAMENTO*\n👤 ${nome}\n📞 ${telefone}\n✂️ ${servico}\n💈 ${profisional || 'Não especificado'}\n⏰ ${horario || 'A definir'}`;
     const linkWhats = `https://api.whatsapp.com/send?phone=5586994517396&text=${encodeURIComponent(msg)}`;
     
     if (!dbAtivo || !pool) {
-        return res.json({ 
-            sucesso: false, 
-            whatsapp_link: linkWhats 
-        });
+        return res.json({ sucesso: false, whatsapp_link: linkWhats });
     }
     
     try {
         if (!nome || !telefone || !servico) {
-            return res.status(400).json({ erro: 'Dados incompletos' });
+            return res.status(400).json({ erro: 'Dados obrigatórios ausentes.' });
         }
         
         const clienteResult = await pool.query(
@@ -290,70 +285,30 @@ app.post('/api/agendar', async (req, res) => {
             `INSERT INTO agendamentos (cliente_id, nome, telefone, servico, profissional, horario) 
              VALUES ($1, $2, $3, $4, $5, $6) 
              RETURNING id`,
-            [clienteId, nome, telefone, servico, profissional || 'Não especificado', horario || 'A definir']
+            [clienteId, nome, telefone, servico, profesional || 'Não especificado', horario || 'A definir']
         );
         
-        console.log('✅ Agendamento salvo - ID:', agendamentoResult.rows[0].id);
-        
-        res.json({ 
+        return res.json({ 
             sucesso: true, 
             agendamento_id: agendamentoResult.rows[0].id,
             whatsapp_link: linkWhats 
         });
-        
     } catch (err) {
-        console.error('❌ Erro ao agendar:', err);
-        res.json({ 
-            sucesso: false, 
-            whatsapp_link: linkWhats 
-        });
+        console.error('❌ Erro no fluxo de agendamento:', err.message);
+        return res.json({ sucesso: false, whatsapp_link: linkWhats });
     }
 });
 
-// ═══════════════════════════════════════
-// ROTA ADMIN
-// ═══════════════════════════════════════
-app.get('/api/admin/dados', async (req, res) => {
-    if (!dbAtivo || !pool) {
-        return res.json({ erro: 'Banco indisponível' });
-    }
-    
-    try {
-        const totalClientes = await pool.query('SELECT COUNT(*) as total FROM clientes');
-        const totalConversas = await pool.query('SELECT COUNT(*) as total FROM conversas');
-        const agendamentosPendentes = await pool.query("SELECT COUNT(*) as total FROM agendamentos WHERE status = 'pendente'");
-        
-        res.json({
-            clientes: totalClientes.rows[0].total,
-            conversas: totalConversas.rows[0].total,
-            agendamentos_pendentes: agendamentosPendentes.rows[0].total
-        });
-    } catch (err) {
-        res.status(500).json({ erro: 'Erro ao buscar dados' });
-    }
-});
-
-// ═══════════════════════════════════════
-// ROTA DE STATUS
-// ═══════════════════════════════════════
+// STATUS DA API
 app.get('/status', (req, res) => {
     res.json({
         status: 'online',
         ia: 'Groq (Llama 3.3 70B)',
-        cache: responseCache.size + ' itens',
-        groq: !!process.env.GROQ_API_KEY ? 'configurado' : 'erro',
-        banco_dados: dbAtivo ? 'Neon DB conectado' : 'indisponível',
+        banco: dbAtivo ? 'PostgreSQL Neon Conectado' : 'Modo Volátil',
     });
 });
 
-// ═══════════════════════════════════════
-// INICIA SERVIDOR
-// ═══════════════════════════════════════
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log('🚀 Barber Connect Server');
-    console.log('📡 Porta:', PORT);
-    console.log('🤖 IA: Groq (Llama 3.3 70B)');
-    console.log('🔑 Groq:', process.env.GROQ_API_KEY ? '✅ OK' : '❌ FALTA');
-    console.log('🗄️ Neon DB:', process.env.DATABASE_URL ? '✅ Configurado' : '❌ FALTA');
+    console.log(`🚀 Servidor escutando na porta ${PORT}`);
 });
